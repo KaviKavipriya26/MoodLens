@@ -1,22 +1,24 @@
 import React from 'react';
 import { AnalysisResult } from '../types';
-import { SL } from '../services/api';
 
 interface HighlightedProps {
   result: AnalysisResult;
 }
+
+// keeps letters (English + Tamil), combining marks and apostrophes
+const norm = (s: string): string => s.toLowerCase().replace(/\u2019/g, "'").replace(/[^\p{L}\p{M}']/gu, '');
 
 export const Highlighted: React.FC<HighlightedProps> = ({ result }) => {
   const parts = result.text.split(/(\s+)/);
   return (
     <span>
       {parts.map((w, i) => {
-        const c = w.toLowerCase().replace(/[^a-z]/g, '');
+        const c = norm(w);
+        const s = result.slang.find((o) => o.k === c);
         const x = result.words.find((o) => o.w === c);
-        const s = SL[c];
         if (s) {
           return (
-            <mark key={i} className="sl" title={s}>
+            <mark key={i} className="sl" title={s.m}>
               {w}
             </mark>
           );

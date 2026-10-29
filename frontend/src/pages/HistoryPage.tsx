@@ -9,6 +9,7 @@ interface HistoryPageProps {
   onHistoryChange: (history: AnalysisResult[]) => void;
   onViewResult: (result: AnalysisResult) => void;
   onDownloadReport: (name: string) => void;
+  onToast: (msg: string) => void;
 }
 
 export const HistoryPage: React.FC<HistoryPageProps> = ({
@@ -17,6 +18,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
   onHistoryChange,
   onViewResult,
   onDownloadReport,
+  onToast,
 }) => {
   const [query, setQuery] = useState('');
   const [filterLabel, setFilterLabel] = useState<string>('');
@@ -55,9 +57,9 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
   const handleDelete = async (item: AnalysisResult) => {
     if (item.id) {
       try {
-        await apiCall(`${EP.history}?id=${item.id}`, null, 'DELETE');
+        await apiCall(`${EP.history}?id=${item.id}`, null, 'DELETE', onToast);
       } catch {
-        // Offline
+        return; // keep the row if the server could not delete it
       }
     }
     const idx = history.indexOf(item);

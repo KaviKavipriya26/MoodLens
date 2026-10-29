@@ -455,3 +455,52 @@ h1, h2, h3 {
     background-color: #8b7fd615;
   }
 }
+
+/* ---- MindScan additions: crisis card, banners, suggestions, breathing, confusion matrix ---- */
+.crisis {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--bad);
+  border-left-width: 5px;
+  background: color-mix(in srgb, var(--bad) 10%, var(--card));
+}
+.crisis p { margin: 6px 0; }
+.crisis ul { margin: 6px 0 0 18px; padding: 0; list-style: disc; }
+.crisis li { margin: 3px 0; }
+.crisis a { font-weight: 600; text-decoration: underline; }
+.banner {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--wa);
+  background: color-mix(in srgb, var(--wa) 14%, var(--card));
+}
+.banner.hi { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, var(--card)); }
+.streak { margin: 4px 0 12px 0; font-weight: 600; }
+.tips { margin: 6px 0 0 18px; padding: 0; list-style: disc; }
+.tips li { margin: 4px 0; }
+.breath {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  padding: 6px;
+  color: #fff;
+  background: var(--pr);
+  transition: transform 4s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) { .breath { transition: none; } }
+table.cm { border-collapse: collapse; margin-top: 6px; }
+table.cm th, table.cm td { border: 1px solid var(--bd); padding: 6px 12px; text-align: center; }
+.card.danger { border-color: var(--bad); }
+.btn.dg { background: var(--bad); color: #fff; }

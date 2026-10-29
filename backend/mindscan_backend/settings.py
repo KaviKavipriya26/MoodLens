@@ -1,31 +1,53 @@
 import os
-from datetime import timedelta
 from pathlib import Path
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = "change-me-in-production"
-DEBUG = True
+
+try:  # read backend/.env if python-dotenv is installed
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    env_file = BASE_DIR / ".env"
+    if env_file.exists():
+        with open(env_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip("'\"")
+                    if k and k not in os.environ:
+                        os.environ[k] = v
+
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-change-me")
+JWT_SECRET = os.environ.get("JWT_SECRET", SECRET_KEY)
+DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = ["*"]
-INSTALLED_APPS = ["django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions",
-    "django.contrib.messages", "rest_framework", "corsheaders", "api"]
-MIDDLEWARE = ["corsheaders.middleware.CorsMiddleware", "django.middleware.common.CommonMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware", "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware"]
+
+# All data lives in MongoDB Atlas (see api/db.py), so Django's SQL database and
+# auth/session apps are not used. That also means: no makemigrations / migrate needed.
+INSTALLED_APPS = ["rest_framework", "corsheaders", "api"]
+MIDDLEWARE = ["corsheaders.middleware.CorsMiddleware", "django.middleware.common.CommonMiddleware"]
 ROOT_URLCONF = "mindscan_backend.urls"
 WSGI_APPLICATION = "mindscan_backend.wsgi.application"
-TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates", "APP_DIRS": True,
-    "OPTIONS": {"context_processors": ["django.contrib.auth.context_processors.auth",
-    "django.contrib.messages.context_processors.messages"]}}]
-# SQLite by default (zero setup). For MySQL: set USE_MYSQL=1 and fill the values below.
-if os.environ.get("USE_MYSQL") == "1":
-    DATABASES = {"default": {"ENGINE": "django.db.backends.mysql", "NAME": os.environ.get("DB_NAME", "mindscan"),
-        "USER": os.environ.get("DB_USER", "root"), "PASSWORD": os.environ.get("DB_PASS", ""),
-        "HOST": os.environ.get("DB_HOST", "localhost"), "PORT": "3306"}}
+DATABASES = {}
+
+_origin = os.environ.get("FRONTEND_ORIGIN", "").strip()
+if _origin:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _origin.split(",") if o.strip()]
 else:
-    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
-CORS_ALLOW_ALL_ORIGINS = True  # restrict to your frontend URL in production
+    CORS_ALLOW_ALL_ORIGINS = True  # development only
 CORS_ALLOW_HEADERS = ["authorization", "content-type"]
-REST_FRAMEWORK = {"DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication"],
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"]}
-SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(days=1)}
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ["api.auth.MongoJWTAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "UNAUTHENTICATED_USER": None,
+    "UNAUTHENTICATED_TOKEN": None,
+    "EXCEPTION_HANDLER": "api.errors.handler",
+}
+
+TREND_ALERT_DAYS = int(os.environ.get("TREND_ALERT_DAYS", "7"))
 USE_TZ = True
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

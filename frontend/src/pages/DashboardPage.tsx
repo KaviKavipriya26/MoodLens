@@ -1,18 +1,22 @@
 import React, { useEffect, useRef } from 'react';
 import { Chart } from 'chart.js';
-import { AnalysisResult, Language } from '../types';
+import { AnalysisResult, Language, Summary } from '../types';
 import { t } from '../locales/i18n';
 import { Column, Table } from '../components/Table';
+import { WeeklySummary } from '../components/WeeklySummary';
+import { Suggestions } from '../components/Suggestions';
 
 interface DashboardPageProps {
   history: AnalysisResult[];
   lang: Language;
+  summary: Summary | null;
   onViewResult: (result: AnalysisResult) => void;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
   history,
   lang,
+  summary,
   onViewResult,
 }) => {
   const c1Ref = useRef<HTMLCanvasElement | null>(null);
@@ -126,7 +130,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     <div>
       <h2>{t('dash', lang)}</h2>
 
-      <div className="grid">
+      <WeeklySummary summary={summary} lang={lang} />
+
+      <div className="grid" style={{ marginTop: '16px' }}>
         {stats.map(([label, val], idx) => (
           <div key={idx} className="card">
             <div className="mu">{label}</div>
@@ -149,6 +155,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
         </div>
       </div>
+
+      {summary && (
+        <div style={{ marginTop: '16px' }}>
+          <Suggestions status={summary.status} lang={lang} />
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: '16px' }}>
         <h3>{t('recent', lang)}</h3>

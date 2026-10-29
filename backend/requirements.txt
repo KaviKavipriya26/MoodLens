@@ -1,7 +1,11 @@
 django>=4.2
 djangorestframework
-djangorestframework-simplejwt
 django-cors-headers
+pymongo[srv]>=4.6
+certifi
+PyJWT>=2.8
+python-dotenv
+tzdata
 textblob
 emoji
-# MySQL (optional): mysqlclient
+reportlab

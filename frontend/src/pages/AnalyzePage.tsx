@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AnalysisResult, Language } from '../types';
 import { t } from '../locales/i18n';
 import { ResultCard } from '../components/ResultCard';
-import { EP, apiCall, mockAnalyze } from '../services/api';
+import { EP, apiCall } from '../services/api';
 
 interface AnalyzePageProps {
   lang: Language;
@@ -37,15 +37,13 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       const res = await apiCall<AnalysisResult>(
         EP.analyze,
         { text: trimmed },
-        'POST'
+        'POST',
+        onToast
       );
       setCurrentResult(res);
       onNewResult(res);
     } catch {
-      // Fallback to local mock analyzer when backend is offline
-      const mockRes = mockAnalyze(trimmed);
-      setCurrentResult(mockRes);
-      onNewResult(mockRes);
+      // error toast already shown by apiCall
     } finally {
       setLoading(false);
     }

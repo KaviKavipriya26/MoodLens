@@ -1,39 +1,23 @@
-import { AnalysisResult, MoodEntry } from '../types';
+import { MoodEntry } from '../types';
 
-export const BASE = 'http://127.0.0.1:8000';
+export const BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'http://127.0.0.1:8000';
 
 export const EP = {
   login: `${BASE}/api/login`,
   register: `${BASE}/api/register`,
+  profile: `${BASE}/api/profile`,
+  changePassword: `${BASE}/api/change-password`,
+  deleteAccount: `${BASE}/api/delete-account`,
   analyze: `${BASE}/api/analyze`,
   bulk: `${BASE}/api/bulk-analyze`,
   history: `${BASE}/api/history`,
   mood: `${BASE}/api/mood`,
+  summary: `${BASE}/api/summary`,
+  metrics: `${BASE}/api/metrics`,
   report: `${BASE}/api/report`,
 };
 
-export const NEG = 'sad tired alone hopeless worthless cry empty hate nothing lost numb exhausted'.split(' ');
-export const POS = 'happy great love good fun excited thanks better grateful'.split(' ');
-export const SL: Record<string, string> = {
-  idk: 'I don’t know',
-  tbh: 'to be honest',
-  ngl: 'not gonna lie',
-  idc: 'I don’t care',
-  smh: 'shaking my head',
-  rn: 'right now',
-  imo: 'in my opinion',
-};
-
-export const EM: Record<string, [string, string]> = {
-  '😢': ['Crying', 'negative'],
-  '😭': ['Sobbing', 'negative'],
-  '😞': ['Disappointed', 'negative'],
-  '💔': ['Broken heart', 'negative'],
-  '😊': ['Smiling', 'positive'],
-  '😂': ['Laughing', 'positive'],
-  '❤️': ['Love', 'positive'],
-  '😐': ['Neutral face', 'neutral'],
-};
+export const UNAUTH_EVENT = 'ms-unauthorized';
 
 export const ls = {
   get: (k: string): string | null => {
@@ -59,103 +43,69 @@ export const ls = {
   },
 };
 
-export function mockAnalyze(x: string): AnalysisResult {
-  const tok = x.split(/\s+/);
-  const words: { w: string; v: number }[] = [];
-  let s = 0;
+export const pad = (n: number): string => String(n).padStart(2, '0');
 
-  tok.forEach((w) => {
-    const c = w.toLowerCase().replace(/[^a-z]/g, '');
-    const v = NEG.includes(c)
-      ? 0.35 + (c.length % 3) * 0.1
-      : POS.includes(c)
-      ? -0.3
-      : 0;
-    if (v) words.push({ w: c, v: +v.toFixed(2) });
-    s += v;
-  });
+/** Local-date YYYY-MM-DD, `offset` days from today (not UTC, so it is right in India early morning). */
+export const addDays = (offset: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+export const todayStr = (): string => addDays(0);
 
-  const emojis = Object.keys(EM)
-    .filter((e) => x.includes(e))
-    .map((e) => ({ e, m: EM[e][0], s: EM[e][1] }));
+export const mapMoods = (list: any[]): MoodEntry[] =>
+  (Array.isArray(list) ? list : []).map((x) => ({
+    id: x.id,
+    m: x.mood,
+    d: x.date,
+    n: x.note,
+    a: x.analysis ?? null,
+  }));
 
-  emojis.forEach((e) => {
-    s += e.s === 'negative' ? 0.3 : e.s === 'positive' ? -0.3 : 0;
-  });
+type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
-  const slang = Object.keys(SL)
-    .filter((k) => tok.some((w) => w.toLowerCase().replace(/[^a-z]/g, '') === k))
-    .map((k) => ({ k, m: SL[k] }));
+const NO_LOGOUT_ON_401 = [EP.login, EP.register];
 
-  const dep = s > 0.3;
-  const conf = Math.round(58 + Math.min(38, Math.abs(s) * 22));
-  const sev: 'Low' | 'Moderate' | 'High' = !dep ? 'Low' : s > 1.1 ? 'High' : s > 0.6 ? 'Moderate' : 'Low';
-  const pol = Math.max(-1, Math.min(1, -s / 2.2));
-  const emo = {
-    Sadness: Math.max(5, Math.round(30 + s * 30)),
-    Anger: 12,
-    Fear: Math.max(5, Math.round(15 + s * 10)),
-    Joy: Math.max(4, Math.round(30 - s * 30)),
-    Neutral: 20,
-  };
-
-  return {
-    label: dep ? 'Depressed' : 'Non-Depressed',
-    conf,
-    sev,
-    emojis,
-    slang,
-    words,
-    emo,
-    pol: +pol.toFixed(2),
-    text: x,
-    date: new Date().toISOString().slice(0, 10),
-  };
+function authHeader(): Record<string, string> {
+  const tk = ls.get('ms_token');
+  return tk ? { Authorization: 'Bearer ' + tk } : {};
 }
 
-export const initialHistory: AnalysisResult[] = [
-  ['I feel so tired and empty lately 😢 idk why', '2026-10-20'],
-  ['Great day with friends, so happy 😊', '2026-10-19'],
-  ['tbh nothing matters rn, feeling lost 💔', '2026-10-17'],
-  ['Thanks for the support, feeling better', '2026-10-15'],
-  ['Just another normal Monday 😐', '2026-10-12'],
-  ['alone again, everything feels hopeless', '2026-10-10'],
-].map(([x, d]) => ({ ...mockAnalyze(x), date: d }));
-
-export const initialJournal: MoodEntry[] = [
-  { m: 5, d: '2026-10-21', n: 'Lovely walk' },
-  { m: 3, d: '2026-10-20', n: 'Okay day' },
-  { m: 2, d: '2026-10-18', n: 'Low energy' },
-  { m: 4, d: '2026-10-16', n: 'Good chat' },
-  { m: 1, d: '2026-10-13', n: 'Hard day' },
-];
+/** Session expired / invalid token: clear it and tell the app to log out. Returns false for login/register. */
+function handleUnauthorized(ep: string): boolean {
+  if (NO_LOGOUT_ON_401.includes(ep)) return false;
+  ls.remove('ms_token');
+  ls.remove('ms_user');
+  window.dispatchEvent(new Event(UNAUTH_EVENT));
+  return true;
+}
 
 export async function apiCall<T = any>(
   ep: string,
   body?: any,
-  method: 'GET' | 'POST' | 'DELETE' = 'POST',
+  method: Method = 'POST',
   onErrorToast?: (msg: string) => void
 ): Promise<T> {
-  const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  const tk = ls.get('ms_token');
-  if (tk) h.Authorization = 'Bearer ' + tk;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...authHeader() };
 
   let r: Response;
   try {
     r = await fetch(ep, {
       method,
-      headers: h,
-      body: method === 'POST' ? JSON.stringify(body) : undefined,
+      headers,
+      body: (method === 'POST' || method === 'PUT') && body != null ? JSON.stringify(body) : undefined,
     });
-  } catch (e) {
-    if (onErrorToast) onErrorToast('Cannot reach backend. Is Django running?');
-    throw e;
+  } catch {
+    const msg = 'Cannot reach backend. Is Django running?';
+    if (onErrorToast) onErrorToast(msg);
+    throw new Error(msg);
   }
 
   if (!r.ok) {
     const errObj = await r.json().catch(() => ({}));
     const msg = errObj.error || errObj.detail || 'Error ' + r.status;
-    if (onErrorToast) onErrorToast(msg);
+    const loggedOut = r.status === 401 && handleUnauthorized(ep.split('?')[0]);
+    if (!loggedOut && onErrorToast) onErrorToast(msg);
     throw new Error(msg);
   }
 
@@ -163,4 +113,28 @@ export async function apiCall<T = any>(
     return {} as T;
   }
   return r.json();
+}
+
+/** Authenticated file download (CSV / PDF from the backend). */
+export async function downloadFile(url: string, filename: string): Promise<void> {
+  let r: Response;
+  try {
+    r = await fetch(url, { headers: authHeader() });
+  } catch {
+    throw new Error('Cannot reach backend. Is Django running?');
+  }
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    if (r.status === 401) handleUnauthorized(url.split('?')[0]);
+    throw new Error(e.error || 'Error ' + r.status);
+  }
+  const blob = await r.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(href);
 }

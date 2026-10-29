@@ -4,6 +4,7 @@ import { AnalysisResult, Language } from '../types';
 import { t } from '../locales/i18n';
 import { Gauge } from './Gauge';
 import { Highlighted } from './Highlighted';
+import { CrisisCard } from './CrisisCard';
 
 Chart.register(...registerables);
 
@@ -106,6 +107,8 @@ export const ResultCard: React.FC<ResultCardProps> = ({
         </p>
       )}
 
+      {(result.crisis || (dep && result.sev === 'High')) && <CrisisCard lang={lang} />}
+
       <div className="grid g2" style={{ marginTop: '12px' }}>
         <div>
           <h3>{t('emo', lang)}</h3>
@@ -168,7 +171,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({
               onSaveToJournal({
                 m: dep ? 2 : 4,
                 d: result.date,
-                n: result.text.slice(0, 40),
+                n: result.text.slice(0, 200),
               });
             }
           }}

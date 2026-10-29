@@ -36,3 +36,6 @@ Thumbs.db
 # Backup & Temporary files
 *.bak
 *.tmp
+
+# secrets
+.env

@@ -1,27 +1,32 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Chart } from 'chart.js';
-import { AnalysisResult, Language } from '../types';
+import { AnalysisResult, Language, ReportSummary, Summary } from '../types';
 import { t } from '../locales/i18n';
 import { Column, Table } from '../components/Table';
-import { EP, apiCall } from '../services/api';
+import { CombinedChart } from '../components/CombinedChart';
+import { ModelMetricsCard } from '../components/ModelMetrics';
+import { EP, addDays, apiCall, todayStr } from '../services/api';
 
 interface ReportsPageProps {
   history: AnalysisResult[];
   lang: Language;
+  summary: Summary | null;
   onToast: (msg: string) => void;
-  onDownloadReport: (name: string) => void;
+  onDownloadReport: (name: string, range?: { from?: string; to?: string }) => void;
   onViewResult: (result: AnalysisResult) => void;
 }
 
 export const ReportsPage: React.FC<ReportsPageProps> = ({
   history,
   lang,
+  summary,
   onToast,
   onDownloadReport,
   onViewResult,
 }) => {
-  const [fromDate, setFromDate] = useState('2026-10-01');
-  const [toDate, setToDate] = useState('2026-10-23');
+  const [fromDate, setFromDate] = useState(addDays(-29));
+  const [toDate, setToDate] = useState(todayStr());
+  const [rangeSummary, setRangeSummary] = useState<ReportSummary | null>(null);
 
   const c1Ref = useRef<HTMLCanvasElement | null>(null);
   const c2Ref = useRef<HTMLCanvasElement | null>(null);
@@ -82,12 +87,14 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
 
   const handleGenerate = async () => {
     try {
-      await apiCall(EP.report, {}, 'POST');
-      onToast(t('saved', lang));
+      const res = await apiCall<ReportSummary>(EP.report, { from: fromDate, to: toDate }, 'POST', onToast);
+      setRangeSummary(res);
     } catch {
-      onToast(t('saved', lang));
+      // error toast already shown by apiCall
     }
   };
+
+  const range = { from: fromDate, to: toDate };
 
   const hcols: Column<AnalysisResult>[] = [
     {
@@ -119,6 +126,18 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
     },
   ];
 
+  const rs = rangeSummary;
+  const stats: [string, string | number][] = rs
+    ? [
+        [t('total', lang), rs.total],
+        [t('dep', lang), rs.depressed],
+        [t('non', lang), rs.non_depressed],
+        [t('risk', lang), rs.avg_risk !== null ? `${rs.avg_risk}%` : '–'],
+        [t('moodEntries', lang), rs.mood_entries],
+        [t('avgMood', lang), rs.avg_mood !== null ? `${rs.avg_mood}/5` : '–'],
+      ]
+    : [];
+
   return (
     <div>
       <h2>{t('reports', lang)}</h2>
@@ -145,29 +164,28 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
           </label>
         </div>
 
-        <p style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-          <button
-            type="button"
-            className="btn"
-            onClick={handleGenerate}
-          >
+        <p style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
+          <button type="button" className="btn" onClick={handleGenerate}>
             {t('gen', lang)}
           </button>
-          <button
-            type="button"
-            className="btn g"
-            onClick={() => onDownloadReport('report.csv')}
-          >
+          <button type="button" className="btn g" onClick={() => onDownloadReport('report.csv', range)}>
             {t('csv', lang)}
           </button>
-          <button
-            type="button"
-            className="btn g"
-            onClick={() => onDownloadReport('report.pdf')}
-          >
+          <button type="button" className="btn g" onClick={() => onDownloadReport('report.pdf', range)}>
             {t('pdf', lang)}
           </button>
         </p>
+
+        {rs && (
+          <div className="grid" style={{ marginTop: '12px' }}>
+            {stats.map(([label, val], idx) => (
+              <div key={idx} className="card">
+                <div className="mu">{label}</div>
+                <div className="stat">{val}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid g2" style={{ marginTop: '16px' }}>
@@ -183,13 +201,12 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
         </div>
       </div>
 
+      <CombinedChart series={summary?.series ?? []} lang={lang} />
+
+      <ModelMetricsCard lang={lang} />
+
       <div className="card" style={{ marginTop: '16px' }}>
-        <Table
-          rows={history}
-          columns={hcols}
-          lang={lang}
-          onRowClick={(r) => onViewResult(r)}
-        />
+        <Table rows={history} columns={hcols} lang={lang} onRowClick={(r) => onViewResult(r)} />
       </div>
     </div>
   );

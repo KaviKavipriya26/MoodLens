@@ -57,14 +57,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       onLoginSuccess(res.user);
       onToast('👋 ' + res.user.name);
     } catch {
-      // Offline fallback for testing if backend is not started
-      const fallbackUser: User = {
-        name: isRegister && name.trim() ? name.trim() : trimmedEmail.split('@')[0],
-        email: trimmedEmail,
-      };
-      ls.set('ms_token', 'mock_token_' + Date.now());
-      onLoginSuccess(fallbackUser);
-      onToast('👋 ' + fallbackUser.name + ' (Local session)');
+      // error toast already shown by apiCall
     } finally {
       setLoading(false);
     }

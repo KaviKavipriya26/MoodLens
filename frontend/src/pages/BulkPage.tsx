@@ -3,13 +3,14 @@ import { Chart } from 'chart.js';
 import { AnalysisResult, Language } from '../types';
 import { t } from '../locales/i18n';
 import { Column, Table } from '../components/Table';
-import { EP, apiCall, mockAnalyze } from '../services/api';
+import { EP, apiCall } from '../services/api';
 
 interface BulkPageProps {
   lang: Language;
   onToast: (msg: string) => void;
   onViewResult: (result: AnalysisResult) => void;
   onDownloadReport: (name: string) => void;
+  onRefresh: () => void;
 }
 
 export const BulkPage: React.FC<BulkPageProps> = ({
@@ -17,6 +18,7 @@ export const BulkPage: React.FC<BulkPageProps> = ({
   onToast,
   onViewResult,
   onDownloadReport,
+  onRefresh,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pieRef = useRef<HTMLCanvasElement | null>(null);
@@ -58,13 +60,13 @@ export const BulkPage: React.FC<BulkPageProps> = ({
         const res = await apiCall<AnalysisResult[]>(
           EP.bulk,
           { texts: rows },
-          'POST'
+          'POST',
+          onToast
         );
         setBulkResults(res);
+        onRefresh();
       } catch {
-        // Offline fallback
-        const mockList = rows.map((r) => mockAnalyze(r));
-        setBulkResults(mockList);
+        // error toast already shown by apiCall
       }
       setProgress(null);
     } catch {

@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { AnalysisResult, Language, MoodEntry, Page, Theme, User } from './types';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AnalysisResult, Language, MoodEntry, Page, ReminderConfig, Summary, Theme, User } from './types';
 import { t } from './locales/i18n';
-import { EP, apiCall, initialHistory, initialJournal, ls } from './services/api';
+import { EP, UNAUTH_EVENT, apiCall, downloadFile, ls, mapMoods } from './services/api';
+import { getReminder, markReminderSent, notify, reminderDue, saveReminder } from './services/reminder';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { Modal } from './components/Modal';
 import { ToastContainer, ToastMessage } from './components/Toast';
+import { TrendBanner } from './components/TrendBanner';
 
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
@@ -42,8 +44,10 @@ export const App: React.FC = () => {
   });
 
   const [page, setPage] = useState<Page>('home');
-  const [history, setHistory] = useState<AnalysisResult[]>(initialHistory);
-  const [journal, setJournal] = useState<MoodEntry[]>(initialJournal);
+  const [history, setHistory] = useState<AnalysisResult[]>([]);
+  const [journal, setJournal] = useState<MoodEntry[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [reminder, setReminder] = useState<ReminderConfig>(getReminder);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [modalResult, setModalResult] = useState<AnalysisResult | null>(null);
 
@@ -64,47 +68,78 @@ export const App: React.FC = () => {
     ls.set('ms_lang', lang);
   }, [lang]);
 
-  // Add toast helper
-  const addToast = (msg: string) => {
+  const addToast = useCallback((msg: string) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, text: msg }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((tItem) => tItem.id !== id));
     }, 2600);
-  };
+  }, []);
 
-  // Load user data from Django if token exists
+  const refreshSummary = useCallback(async () => {
+    try {
+      setSummary(await apiCall<Summary>(EP.summary, null, 'GET'));
+    } catch {
+      // ignore: summary is optional
+    }
+  }, []);
+
+  const loadAll = useCallback(async () => {
+    try {
+      const h = await apiCall<AnalysisResult[]>(EP.history, null, 'GET', addToast);
+      setHistory(Array.isArray(h) ? h : []);
+    } catch {
+      // toast already shown
+    }
+    try {
+      setJournal(mapMoods(await apiCall<any[]>(EP.mood, null, 'GET')));
+    } catch {
+      // ignore
+    }
+    refreshSummary();
+  }, [addToast, refreshSummary]);
+
+  // Load this user's data from MongoDB (via Django) after login; clear it on logout
   useEffect(() => {
-    const loadUserData = async () => {
-      if (!user) return;
-      try {
-        const histData = await apiCall<AnalysisResult[]>(EP.history, null, 'GET');
-        if (Array.isArray(histData) && histData.length > 0) {
-          setHistory(histData);
-        }
-      } catch {
-        // Fallback to local default
-      }
+    if (user) {
+      loadAll();
+    } else {
+      setHistory([]);
+      setJournal([]);
+      setSummary(null);
+    }
+  }, [user, loadAll]);
 
-      try {
-        const moodData = await apiCall<any[]>(EP.mood, null, 'GET');
-        if (Array.isArray(moodData) && moodData.length > 0) {
-          setJournal(
-            moodData.map((x) => ({
-              id: x.id,
-              m: x.mood,
-              d: x.date,
-              n: x.note,
-            }))
-          );
-        }
-      } catch {
-        // Fallback
+  // Expired / invalid token -> back to login
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setUser(null);
+      setPage('login');
+      addToast(t('sessionExp', lang));
+    };
+    window.addEventListener(UNAUTH_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTH_EVENT, onUnauthorized);
+  }, [lang, addToast]);
+
+  // Daily mood reminder (runs while the app is open in the browser)
+  useEffect(() => {
+    if (!user || !summary) return;
+    const tick = () => {
+      if (reminderDue(reminder, summary.logged_today)) {
+        markReminderSent();
+        notify('MindScan', t('remBody', lang));
+        addToast('🔔 ' + t('remBody', lang));
       }
     };
+    tick();
+    const id = window.setInterval(tick, 30000);
+    return () => window.clearInterval(id);
+  }, [user, summary, reminder, lang, addToast]);
 
-    loadUserData();
-  }, [user]);
+  const handleReminderChange = (cfg: ReminderConfig) => {
+    setReminder(cfg);
+    saveReminder(cfg);
+  };
 
   const handleNavigate = (targetPage: Page) => {
     if (PROT.includes(targetPage) && !user) {
@@ -136,35 +171,28 @@ export const App: React.FC = () => {
     setPage('home');
   };
 
-  const handleDownloadFile = (filename: string) => {
-    // Generate CSV or PDF download
-    if (filename.endsWith('.csv')) {
-      const csvHeader = 'date,text,label,confidence,severity,polarity\n';
-      const csvRows = history
-        .map(
-          (h) =>
-            `"${h.date}","${h.text.replace(/"/g, '""')}","${h.label}",${h.conf},"${h.sev}",${h.pol}`
-        )
-        .join('\n');
-      const blob = new Blob([csvHeader + csvRows], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } else {
-      // Simulating PDF print/download
-      window.print();
+  // CSV / PDF are generated by the backend from the data stored in MongoDB
+  const handleDownloadFile = async (filename: string, range?: { from?: string; to?: string }) => {
+    const qs = new URLSearchParams({ fmt: filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv' });
+    if (range?.from) qs.set('from', range.from);
+    if (range?.to) qs.set('to', range.to);
+    try {
+      await downloadFile(`${EP.report}?${qs.toString()}`, filename);
+      addToast(`${t('saved', lang)}: ${filename}`);
+    } catch (e) {
+      addToast((e as Error).message);
     }
-    addToast(`${t('saved', lang)}: ${filename}`);
   };
 
-  const handleSaveToJournal = (entry: { m: number; d: string; n: string }) => {
-    setJournal((prev) => [entry, ...prev]);
-    addToast(t('saved', lang));
+  const handleSaveToJournal = async (entry: { m: number; d: string; n: string }) => {
+    try {
+      const list = await apiCall<any[]>(EP.mood, { mood: entry.m, date: entry.d, note: entry.n }, 'POST', addToast);
+      setJournal(mapMoods(list));
+      addToast(t('saved', lang));
+      refreshSummary();
+    } catch {
+      // toast already shown
+    }
   };
 
   // Determine active view
@@ -173,26 +201,15 @@ export const App: React.FC = () => {
   const renderContent = () => {
     switch (page) {
       case 'home':
-        return (
-          <HomePage
-            user={user}
-            lang={lang}
-            onNavigate={handleNavigate}
-          />
-        );
+        return <HomePage user={user} lang={lang} onNavigate={handleNavigate} />;
       case 'login':
-        return (
-          <LoginPage
-            lang={lang}
-            onLoginSuccess={handleLoginSuccess}
-            onToast={addToast}
-          />
-        );
+        return <LoginPage lang={lang} onLoginSuccess={handleLoginSuccess} onToast={addToast} />;
       case 'dash':
         return (
           <DashboardPage
             history={history}
             lang={lang}
+            summary={summary}
             onViewResult={(res) => setModalResult(res)}
           />
         );
@@ -200,7 +217,10 @@ export const App: React.FC = () => {
         return (
           <AnalyzePage
             lang={lang}
-            onNewResult={(res) => setHistory((prev) => [res, ...prev])}
+            onNewResult={(res) => {
+              setHistory((prev) => [res, ...prev]);
+              refreshSummary();
+            }}
             onToast={addToast}
             onSaveToJournal={handleSaveToJournal}
             onDownloadReport={handleDownloadFile}
@@ -213,6 +233,7 @@ export const App: React.FC = () => {
             onToast={addToast}
             onViewResult={(res) => setModalResult(res)}
             onDownloadReport={handleDownloadFile}
+            onRefresh={loadAll}
           />
         );
       case 'journal':
@@ -220,8 +241,10 @@ export const App: React.FC = () => {
           <JournalPage
             entries={journal}
             lang={lang}
+            summary={summary}
             onToast={addToast}
             onEntriesChange={(newEntries) => setJournal(newEntries)}
+            onSummaryRefresh={refreshSummary}
           />
         );
       case 'history':
@@ -229,9 +252,13 @@ export const App: React.FC = () => {
           <HistoryPage
             history={history}
             lang={lang}
-            onHistoryChange={(newHist) => setHistory(newHist)}
+            onHistoryChange={(newHist) => {
+              setHistory(newHist);
+              refreshSummary();
+            }}
             onViewResult={(res) => setModalResult(res)}
             onDownloadReport={handleDownloadFile}
+            onToast={addToast}
           />
         );
       case 'reports':
@@ -239,6 +266,7 @@ export const App: React.FC = () => {
           <ReportsPage
             history={history}
             lang={lang}
+            summary={summary}
             onToast={addToast}
             onDownloadReport={handleDownloadFile}
             onViewResult={(res) => setModalResult(res)}
@@ -249,6 +277,7 @@ export const App: React.FC = () => {
           <SettingsPage
             user={user}
             lang={lang}
+            reminder={reminder}
             onToast={addToast}
             onToggleTheme={handleToggleTheme}
             onToggleLang={handleToggleLang}
@@ -256,18 +285,14 @@ export const App: React.FC = () => {
               setUser(updated);
               ls.set('ms_user', JSON.stringify(updated));
             }}
+            onReminderChange={handleReminderChange}
+            onLogout={handleLogout}
           />
         );
       case 'about':
         return <AboutPage lang={lang} />;
       default:
-        return (
-          <HomePage
-            user={user}
-            lang={lang}
-            onNavigate={handleNavigate}
-          />
-        );
+        return <HomePage user={user} lang={lang} onNavigate={handleNavigate} />;
     }
   };
 
@@ -287,16 +312,13 @@ export const App: React.FC = () => {
           <div className="app">
             <aside className="side">
               {PROT.map((p) => (
-                <a
-                  key={p}
-                  className={p === page ? 'on' : ''}
-                  onClick={() => handleNavigate(p)}
-                >
+                <a key={p} className={p === page ? 'on' : ''} onClick={() => handleNavigate(p)}>
                   {t(p, lang)}
                 </a>
               ))}
             </aside>
             <main className="main" id="mn">
+              <TrendBanner summary={summary} lang={lang} />
               {renderContent()}
             </main>
           </div>
